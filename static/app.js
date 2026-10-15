@@ -1105,3 +1105,16 @@ function drawPath(f) {
   // Chart.js sizes axis labels with whatever font is loaded at draw time; redraw once the web fonts arrive.
   document.fonts?.ready.then(() => Object.values(redraws).forEach((fn) => fn()));
 })();
+
+/* ---------- contact: the address is assembled in the browser so simple scrapers don't harvest it ---------- */
+(function contact() {
+  const addr = ["jayveenmp", "gmail.com"].join("@");
+  const a = $("#contactMail"), b = $("#copyMail");
+  if (!a) return;
+  a.textContent = addr;
+  a.href = `mailto:${addr}?subject=${encodeURIComponent("US Treasuries Dashboard")}`;
+  b.addEventListener("click", () => {
+    navigator.clipboard?.writeText(addr).then(() => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy email"), 1500); })
+      .catch(() => { const r = document.createRange(); r.selectNodeContents(a); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); });
+  });
+})();
