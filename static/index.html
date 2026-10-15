@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>US Treasuries Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="mark" aria-hidden="true">UST</span>
+    <div>
+      <h1>US Treasuries Dashboard</h1>
+      <p id="asof" class="muted">Loading Treasury data…</p>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button role="tab" id="t-curve" data-tab="curve" aria-selected="true">Curve</button>
+    <button role="tab" id="t-fed" data-tab="fed" aria-selected="false">Fed</button>
+    <button role="tab" id="t-auctions" data-tab="auctions" aria-selected="false">Supply</button>
+  </nav>
+  <button id="themeBtn" class="ghost" type="button" title="Switch theme">Theme: system</button>
+</header>
+
+<div class="strip" id="strip" aria-label="Market levels"></div>
+<div class="health" id="health" aria-label="Data status"></div>
+
+<main>
+  <!-- ================= CURVE & STORY ================= -->
+  <section id="tab-curve" class="tab" role="tabpanel" aria-labelledby="t-curve">
+
+    <!-- 1. Executive summary, with the window selector -->
+    <article class="card story" id="storyCard">
+      <div class="story-bar">
+        <span class="eyebrow">Window</span>
+        <div class="seg" id="winSeg" role="group" aria-label="Compare today's close with">
+          <button type="button" data-h="1D">1D</button><button type="button" data-h="1W">1W</button>
+          <button type="button" data-h="1M">1M</button><button type="button" data-h="3M">3M</button>
+          <button type="button" data-h="1Y" class="on">1Y</button>
+        </div>
+        <form id="customForm" class="custom">
+          <label for="customDate">or since</label>
+          <input type="date" id="customDate" min="1990-01-02">
+          <button type="submit" class="btn">Go</button>
+        </form>
+      </div>
+      <div id="storyBody"><p class="muted">Building the executive summary…</p></div>
+    </article>
+
+    <!-- 2. Yield curve and the numbers -->
+    <div class="grid-main">
+      <article class="card stretch">
+        <header class="card-h">
+          <div><h2 id="curveTitle">Yield curve</h2><p class="hint" id="curveHint"></p></div>
+          <div class="legend" id="curveLegend"></div>
+        </header>
+        <div class="chart-box grow"><canvas id="curveChart" aria-label="Treasury par yield curve today and on the comparison date"></canvas></div>
+        <p class="hint" style="margin-top:6px">Change by maturity, in basis points (1bp = 0.01 percentage point). Red: yield rose. Blue: yield fell.</p>
+        <div class="chart-box short"><canvas id="chgChart" aria-label="Change in yield by tenor in basis points"></canvas></div>
+        <p class="srcline">Source: <span data-src="ust_par">U.S. Treasury, Daily Treasury Par Yield Curve Rates</span>. Changes computed by the dashboard.</p>
+      </article>
+      <aside class="card" id="attrCard"><p class="muted">Loading…</p></aside>
+    </div>
+
+    <!-- 2a. The narrative behind the move -->
+    <article class="card" id="narrativeCard"></article>
+
+    <!-- 2b. The path between the two dates -->
+    <article class="card" id="pathCard">
+      <header class="card-h"><div><h2 id="histTitle">The path in between</h2><p class="hint" id="histHint"></p></div><div class="legend" id="histLegend"></div></header>
+      <div class="chart-box tall"><canvas id="histChart" aria-label="10Y, 2Y and fed funds over the window"></canvas></div>
+      <p class="srcline">Sources: <span data-src="ust_par,fred:GS10,fred:GS2">U.S. Treasury yields</span>, <span data-src="fred:FEDFUNDS,fred:DFEDTARU">fed funds</span>,
+        <span data-src="rstar,fred:EXPINF10YR">long-run anchor (r* + expected inflation, 20-year windows)</span>, <span data-src="fred:USREC">NBER recessions</span>,
+        <span data-src="fred:WALCL,fred:FEDFUNDS,fred:FYFSGDA188S">MP regimes classified by the dashboard</span>.</p>
+      <div class="path-grid">
+        <div id="legsBox"></div>
+        <div id="secBox"></div>
+      </div>
+    </article>
+
+    <!-- 3. The full story -->
+    <article class="card story" id="fullStoryCard"><p class="muted">Building the full story…</p></article>
+
+    <!-- 4. Every window at a glance -->
+    <article class="card flush">
+      <header class="card-h"><div><h2>Every window at a glance</h2><p class="hint" id="matrixHint">Select a row to load its story.</p></div></header>
+      <div class="tbl-wrap"><table class="matrix" id="matrix"><tbody><tr><td class="muted pad">Loading…</td></tr></tbody></table></div>
+    </article>
+
+    <!-- 4. Evidence -->
+    <div class="grid-even">
+      <article class="card" id="monCard"></article>
+      <article class="card" id="fisCard"></article>
+    </div>
+    <article class="card flush" id="scoreCard"></article>
+
+    <!-- 5. Sources and context -->
+    <div class="grid-main pair">
+      <article class="card fill" id="newsCard"></article>
+      <article class="card">
+        <header class="card-h">
+          <div><h2>Curve slope, past year</h2><p class="hint">Long minus short yield, in bp. Below zero = inverted curve.</p></div>
+          <div class="legend" id="slopeLegend"></div>
+        </header>
+        <div class="chart-box tall"><canvas id="slopeChart" aria-label="2s10s and 3m10y spreads over the past year"></canvas></div>
+        <p class="srcline">Source: <span data-src="ust_par">U.S. Treasury, Daily Treasury Par Yield Curve Rates</span>. Spreads computed by the dashboard.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ================= SUPPLY ================= -->
+  <section id="tab-auctions" class="tab" role="tabpanel" aria-labelledby="t-auctions" hidden>
+    <div class="stats" id="supplyStats"><p class="muted">Loading auctions…</p></div>
+    <div class="jumpbar" id="jumpBar"></div>
+    <article class="card flush" id="billsCard"></article>
+    <article class="card flush" id="notesCard"></article>
+    <article class="card flush" id="bondsCard"></article>
+    <article class="card flush" id="resultsCard"></article>
+    <div class="grid-even pair">
+      <article class="card flush" id="buybackCard"><p class="muted pad">Loading buybacks…</p></article>
+      <article class="card fill" id="debtNewsCard"></article>
+    </div>
+  </section>
+
+  <!-- ================= FED ================= -->
+  <section id="tab-fed" class="tab" role="tabpanel" aria-labelledby="t-fed" hidden>
+    <div class="stats" id="fedStats"><p class="muted">Loading fed funds futures…</p></div>
+    <article class="card" id="moneyCard"><p class="muted">Loading funding markets…</p></article>
+    <article class="card flush" id="meetingsCard"></article>
+    <div class="grid-main">
+      <article class="card stretch">
+        <header class="card-h">
+          <h2>Implied policy path</h2>
+          <div class="legend" id="pathLegend"></div>
+        </header>
+        <div class="chart-box grow"><canvas id="pathChart" aria-label="Futures-implied effective fed funds rate after each FOMC meeting"></canvas></div>
+        <p class="srcline">Source: <span data-src="zq,effr,fomc">CBOT 30-day fed funds futures, New York Fed EFFR, FOMC calendar</span>. Implied rates computed by the dashboard.</p>
+      </article>
+      <aside class="card" id="watchCard"></aside>
+    </div>
+    <article class="card" id="commsCard"></article>
+  </section>
+</main>
+
+<footer class="foot muted">
+  Sources: U.S. Treasury par and real yield curves; TreasuryDirect auctions; Fiscal Data buybacks; Federal Reserve calendar,
+  speeches and releases; BLS, BEA, Census, University of Michigan, Philadelphia Fed, EIA and OECD series via FRED;
+  New York Fed EFFR; CBOT 30-day fed funds futures and market prices via Yahoo Finance. Headlines from Google News, kept only
+  when the outlet is on the verified list. Meeting odds follow the CME FedWatch method in 25bp steps. Not investment advice.
+</footer>
+
+<script src="sources.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

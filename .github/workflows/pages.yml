@@ -1,0 +1,68 @@
+name: Publish dashboard
+
+# Two updates on every US Treasury market trading day (weekends and SIFMA bond-market holidays are skipped by
+# trading_day.py), in New York time:
+#   Morning, about 8:50am: after the 8:30am economic releases (CPI, payrolls, retail sales, claims) and fresh
+#     futures, overnight funding (SOFR, EFFR) and news.
+#   Evening, about 6:30pm: after the cash close, once Treasury has posted the day's par yield curve.
+# GitHub cron runs in UTC and ignores daylight saving, so each update is scheduled at two UTC times an hour apart
+# and the "New York time" step keeps only the one that lands in the right local window.
+on:
+  schedule:
+    - cron: "50 12 * * 1-5"   # 8:50 EDT / 7:50 EST
+    - cron: "50 13 * * 1-5"   # 9:50 EDT / 8:50 EST
+    - cron: "30 22 * * 1-5"   # 6:30pm EDT / 5:30pm EST
+    - cron: "30 23 * * 1-5"   # 7:30pm EDT / 6:30pm EST
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Trading day and New York time
+        id: gate
+        run: |
+          now=$(TZ=America/New_York date +%H%M)
+          trading=$(python3 trading_day.py)
+          echo "New York time: $now, trading day: $trading (${{ github.event_name }})"
+          if [ "${{ github.event_name }}" != "schedule" ]; then run=true
+          elif [ "$trading" != "true" ]; then run=false
+          elif [ "$now" -ge 830 ] && [ "$now" -le 945 ]; then run=true
+          elif [ "$now" -ge 1815 ] && [ "$now" -le 1930 ]; then run=true
+          else run=false; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - name: Build the static site
+        if: steps.gate.outputs.run == 'true'
+        run: python3 build_static.py
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.gate.outputs.run == 'true'
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
