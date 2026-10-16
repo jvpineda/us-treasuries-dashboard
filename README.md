@@ -17,7 +17,8 @@ python3 server.py --open
 
 ### Published site
 
-A static copy is published to GitHub Pages by `.github/workflows/pages.yml`. It is rebuilt twice on every US Treasury
+**https://ustdashboard.vercel.app** (also mirrored on GitHub Pages). A static copy is published by
+`.github/workflows/pages.yml`, which deploys to Vercel when the `VERCEL_TOKEN` repository secret is set. It is rebuilt twice on every US Treasury
 trading day: about 8:50am New York time, after the 8:30am economic releases, and about 6:30pm, after the close once
 Treasury has posted the day's curve. Weekends and SIFMA bond-market holidays are skipped (`trading_day.py`). It also
 rebuilds on every push to `main` and on demand from the Actions tab. `build_static.py`

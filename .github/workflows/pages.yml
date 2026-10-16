@@ -1,4 +1,5 @@
 name: Publish dashboard
+# Publishes to https://ustdashboard.vercel.app and to GitHub Pages.
 
 # Two updates on every US Treasury market trading day (weekends and SIFMA bond-market holidays are skipped by
 # trading_day.py), in New York time:
@@ -29,6 +30,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
     outputs:
       run: ${{ steps.gate.outputs.run }}
     steps:
@@ -55,6 +60,11 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         with:
           path: site
+      # Production site: https://ustdashboard.vercel.app (needs the VERCEL_TOKEN repository secret).
+      - name: Deploy to Vercel
+        if: steps.gate.outputs.run == 'true' && env.VERCEL_TOKEN != ''
+        working-directory: site
+        run: npx --yes vercel@64.3.1 deploy --prod --yes --token "$VERCEL_TOKEN"
 
   deploy:
     needs: build

@@ -63,6 +63,7 @@ def main():
     (OUT / "index.html").write_text(html.replace('<script src="sources.js"></script>',
                                                  '<script src="config.js"></script>\n<script src="sources.js"></script>'))
     (OUT / ".nojekyll").write_text("")
+    (OUT / ".vercelignore").write_text(".env*\n.vercel\n")
     if REQUIRED & set(failed):
         sys.exit(f"Required data failed: {sorted(REQUIRED & set(failed))}")
     print(f"Built {OUT} at {built}; failed: {failed or 'none'}")
