@@ -1,19 +1,17 @@
 name: Publish dashboard
 # Publishes to https://ustdashboard.vercel.app and to GitHub Pages.
 
-# Two updates on every US Treasury market trading day (weekends and SIFMA bond-market holidays are skipped by
-# trading_day.py), in New York time:
-#   Morning, about 8:50am: after the 8:30am economic releases (CPI, payrolls, retail sales, claims) and fresh
-#     futures, overnight funding (SOFR, EFFR) and news.
-#   Evening, about 6:30pm: after the cash close, once Treasury has posted the day's par yield curve.
-# GitHub cron runs in UTC and ignores daylight saving, so each update is scheduled at two UTC times an hour apart
-# and the "New York time" step keeps only the one that lands in the right local window.
+# One update every US Treasury market trading day (weekends and SIFMA bond-market holidays are skipped by
+# trading_day.py), at about 8:50am New York time: after the 8:30am economic releases (CPI, payrolls, retail sales,
+# claims), with the previous day's closing curve, fresh futures, overnight funding (SOFR, EFFR) and news.
+# GitHub cron runs in UTC, ignores daylight saving and can start late, so the job is scheduled three times each
+# weekday morning and schedule_gate.py publishes on the first run after 8:30am New York time that finds today's update
+# not yet published. The later runs then do nothing.
 on:
   schedule:
     - cron: "50 12 * * 1-5"   # 8:50 EDT / 7:50 EST
     - cron: "50 13 * * 1-5"   # 9:50 EDT / 8:50 EST
-    - cron: "30 22 * * 1-5"   # 6:30pm EDT / 5:30pm EST
-    - cron: "30 23 * * 1-5"   # 7:30pm EDT / 6:30pm EST
+    - cron: "30 15 * * 1-5"   # 11:30 EDT / 10:30 EST, backup if the earlier runs were delayed or failed
   workflow_dispatch:
   push:
     branches: [main]
@@ -44,14 +42,8 @@ jobs:
       - name: Trading day and New York time
         id: gate
         run: |
-          now=$(TZ=America/New_York date +%H%M)
-          trading=$(python3 trading_day.py)
-          echo "New York time: $now, trading day: $trading (${{ github.event_name }})"
-          if [ "${{ github.event_name }}" != "schedule" ]; then run=true
-          elif [ "$trading" != "true" ]; then run=false
-          elif [ "$now" -ge 830 ] && [ "$now" -le 945 ]; then run=true
-          elif [ "$now" -ge 1815 ] && [ "$now" -le 1930 ]; then run=true
-          else run=false; fi
+          if [ "${{ github.event_name }}" != "schedule" ]; then run=true; else run=$(python3 schedule_gate.py); fi
+          echo "Publish: $run (${{ github.event_name }}, New York $(TZ=America/New_York date '+%a %H:%M'))"
           echo "run=$run" >> "$GITHUB_OUTPUT"
       - name: Build the static site
         if: steps.gate.outputs.run == 'true'
