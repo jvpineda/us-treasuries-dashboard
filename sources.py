@@ -183,6 +183,22 @@ def verified_name(url: str):
     return None
 
 
+_news_slots = threading.BoundedSemaphore(3)  # Google News throttles bursts, especially from cloud servers
+
+
+def _news_get(url: str, attempts: int = 4) -> bytes:
+    """Fetch a Google News feed with at most three requests in flight and retries with backoff."""
+    last = None
+    for i in range(attempts):
+        try:
+            with _news_slots:
+                return http_get(url, timeout=20)
+        except Exception as e:  # 429, 503, timeouts: wait and try again
+            last = e
+            time.sleep(2 * 2 ** i)
+    raise last
+
+
 def google_news(query: str, after: date | None = None, before: date | None = None,
                 when: str | None = None, verified_only: bool = True) -> list:
     q = query
@@ -196,7 +212,7 @@ def google_news(query: str, after: date | None = None, before: date | None = Non
         {"q": q, "hl": "en-US", "gl": "US", "ceid": "US:en"})
 
     def fetch():
-        root = ET.fromstring(http_get(url))
+        root = ET.fromstring(_news_get(url))
         items = []
         for it in root.iter("item"):
             src = it.find("source")
