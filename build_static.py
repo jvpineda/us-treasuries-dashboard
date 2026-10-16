@@ -98,7 +98,21 @@ def jobs():
         yield f"story-{h}", (lambda h=h: A.story_view(h))
 
 
+def news_check():
+    """Log whether the news feed answers from this machine (it can block cloud servers)."""
+    import urllib.request
+    url = "https://news.google.com/rss/search?q=%22Treasury+yields%22+when:2d&hl=en-US&gl=US&ceid=US:en"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": S.UA})
+        with urllib.request.urlopen(req, timeout=20, context=S._SSL) as r:
+            body = r.read()
+            print(f"news check: HTTP {r.status}, {len(body)} bytes, {body.count(b'<item>')} items, final URL {r.geturl()[:80]}")
+    except Exception as e:
+        print(f"news check: failed: {e!r}"[:300])
+
+
 def main():
+    news_check()
     if OUT.exists():
         shutil.rmtree(OUT)
     shutil.copytree(ROOT / "static", OUT)
