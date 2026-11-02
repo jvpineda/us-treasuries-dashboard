@@ -1,8 +1,7 @@
 """Should the scheduled job publish now? Prints "true" or "false".
 
 Publish once per trading day, as soon as possible after 8:30am New York time (the morning economic releases). If the
-morning build came out without headlines (the news feed sometimes throttles cloud servers), a later run publishes
-again.
+morning build came out incomplete (no headlines, or any section that failed to build), a later run publishes again.
 GitHub may start scheduled jobs late, so the workflow runs several times each morning; each run publishes only if
 today is a trading day, it is past 8:30am in New York, and the live site has not already been built since then.
 """
@@ -28,7 +27,7 @@ def last_built():
         try:
             meta = json.loads(S.http_get(f"{url}?t={datetime.now().timestamp():.0f}", timeout=15))
             out.append(datetime.fromisoformat(meta["built_at"]).astimezone(NY))
-            news_ok = news_ok and meta.get("news", 1) > 0
+            news_ok = news_ok and meta.get("news", 1) > 0 and not meta.get("failed")
         except Exception:
             pass
     return (min(out), news_ok) if out else (None, False)  # the oldest site decides, so a lagging copy still refreshes
@@ -43,7 +42,7 @@ def should_publish(now=None):
     if built and built >= cutoff and news_ok:
         return False, f"already published today at {built:%H:%M} NY"
     if built and built >= cutoff:
-        return True, f"published today at {built:%H:%M} NY but without headlines; publishing again"
+        return True, f"published today at {built:%H:%M} NY but incomplete (no headlines or a failed section); publishing again"
     return True, f"last build {built:%a %b %d %H:%M} NY" if built else "no published build found"
 
 
