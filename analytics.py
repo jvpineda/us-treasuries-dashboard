@@ -783,17 +783,25 @@ def supply_metrics(upcoming, rows, done, by_key, tc, asof, metrics=None) -> dict
     out = {}
     # 1. Net new cash: announced offerings minus the maturing amount on each settlement date (per security type).
     groups = {}
-    for u in upcoming:
+    # Auctions already priced but not yet settled belong to the same settlement dates as the ones ahead.
+    today = date.today().isoformat()
+    pending = [x for x in done if (x.get("issueDate") or "")[:10] > today]
+    for u in list(upcoming) + pending:
         off, mat = _f(u.get("offeringAmount")), _f(u.get("estimatedAmountOfPubliclyHeldMaturingSecuritiesByType"))
-        if not off or mat is None:
-            continue
-        g = groups.setdefault(((u.get("issueDate") or "")[:10], u.get("securityType")), {"offer": 0.0, "mature": mat, "n": 0})
-        g["offer"] += off; g["n"] += 1
-    if groups:
-        offer = sum(g["offer"] for g in groups.values()) / 1e9
-        mature = sum(g["mature"] for g in groups.values()) / 1e9
+        g = groups.setdefault(((u.get("issueDate") or "")[:10], u.get("securityType")), {"offer": 0.0, "mature": mat, "n": 0, "unsized": 0})
+        if off:
+            g["offer"] += off; g["n"] += 1
+        else:
+            g["unsized"] += 1
+        if g["mature"] is None:
+            g["mature"] = mat
+    # Only settlement dates where every auction is sized: a partial sum against the full maturing amount misleads.
+    full = {k: g for k, g in groups.items() if g["n"] and not g["unsized"] and g["mature"] is not None}
+    if full:
+        offer = sum(g["offer"] for g in full.values()) / 1e9
+        mature = sum(g["mature"] for g in full.values()) / 1e9
         out["net_cash"] = {"net_bn": round(offer - mature, 1), "gross_bn": round(offer, 1), "maturing_bn": round(mature, 1),
-                           "settle": sorted({k[0] for k in groups}), "auctions": sum(g["n"] for g in groups.values()),
+                           "settle": sorted({k[0] for k in full}), "auctions": sum(g["n"] for g in full.values()),
                            "unsized": sum(1 for u in upcoming if not _f(u.get("offeringAmount")))}
     # 2. Duration supply: coupon auctions ahead in 10-year equivalents (size x duration / 10Y duration).
     d10 = _par_duration(tc.get("10Y"), 10)
@@ -1030,7 +1038,7 @@ def health() -> dict:
     add("SOFR", "sofr", lambda: S.sofr_history(5)[0]["date"], 5)
     add("Business surveys", "fred:GAFDFSA066MSFRBPHI", lambda: S.fred("GAFDFSA066MSFRBPHI", today - timedelta(days=120))[-1][0], 50)
     add("CPI", "fred:CPIAUCSL", lambda: S.fred("CPIAUCSL", today - timedelta(days=150))[-1][0], 75)
-    add("Neutral rate (r*)", "rstar", lambda: X.rstar()[-1][0], 200)
+    add("Neutral rate (r*)", "rstar", lambda: X.rstar()[-1][0], 300)  # quarterly, published with a long lag
     add("Auctions", "td_upcoming", lambda: today if S.td_upcoming() is not None else None, 1)
     add("News (Google News)", "gnews", lambda: today if S.google_news('"Treasury yields"', when="2d") is not None else None, 1)
     return {"rows": rows, "ok": all(r["status"] == "ok" for r in rows)}

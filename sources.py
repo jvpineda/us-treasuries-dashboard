@@ -375,13 +375,53 @@ def fred(series_id: str, start: date) -> list:
 TD = "https://www.treasurydirect.gov/TA_WS/securities"
 
 
+# TreasuryDirect renamed its auction fields in November 2026. The dashboard reads the original names; each new name
+# is copied onto its original one when the original is missing, so either version of the feed works.
+TD_FIELDS = {
+    "auctionDate": "competitiveAuctionCloseDate",
+    "closingTimeCompetitive": "competitiveAuctionCloseTime",
+    "term": "originalSecurityTerm",
+    "tips": "inflationProtected",
+    "cashManagementBillCMB": "cashManagementBill",
+    "highDiscountRate": "highRate",
+    "lowDiscountRate": "lowRate",
+    "averageMedianDiscountRate": "medianRate",
+    "highInvestmentRate": "investmentRate",
+    "averageMedianYield": "medianYield",
+    "averageMedianDiscountMargin": "medianDiscountMargin",
+    "primaryDealerAccepted": "primaryDealersCompetitiveParAwarded",
+    "directBidderAccepted": "directBiddersCompetitiveParAwarded",
+    "indirectBidderAccepted": "indirectBiddersCompetitiveParAwarded",
+    "somaAccepted": "somaNoncompetitiveParAwarded",
+    "totalTendered": "totalParRecognizedInsideOfOfferingAmount",
+    "totalAccepted": "totalParAwardedInsideOfOfferingAmount",
+    "estimatedAmountOfPubliclyHeldMaturingSecuritiesByType": "privateHoldings",
+    "pdfFilenameAnnouncement": "treasuryOfferingAnnouncementPressReleaseFileName",
+    "pdfFilenameCompetitiveResults": "treasuryAuctionResultsPressReleaseFileName",
+}
+TD_ALLOTTED = ("allottedAtHighYieldPercentage", "allottedAtHighRatePercentage", "allottedAtHighDiscountMarginPercentage")
+
+
+def td_normalize(rows: list) -> list:
+    out = []
+    for x in rows:
+        x = dict(x)
+        for old, new in TD_FIELDS.items():
+            if x.get(old) in (None, "") and x.get(new) not in (None, ""):
+                x[old] = x[new]
+        if x.get("allocationPercentage") in (None, ""):
+            x["allocationPercentage"] = next((x[k] for k in TD_ALLOTTED if x.get(k) not in (None, "")), "")
+        out.append(x)
+    return out
+
+
 def td_upcoming() -> list:
-    return cached("td_up", 900, lambda: json.loads(http_get(f"{TD}/upcoming?format=json")))
+    return cached("td_up", 900, lambda: td_normalize(json.loads(http_get(f"{TD}/upcoming?format=json"))))
 
 
 def td_auctioned(days: int = 420) -> list:
     return cached(("td_auc", days), 1800,
-                  lambda: json.loads(http_get(f"{TD}/auctioned?format=json&days={days}", timeout=40)))
+                  lambda: td_normalize(json.loads(http_get(f"{TD}/auctioned?format=json&days={days}", timeout=40))))
 
 
 def td_pdf(year: str, filename: str):
