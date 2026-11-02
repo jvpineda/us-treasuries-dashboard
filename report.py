@@ -385,6 +385,52 @@ BIAS = {"Bear flattener": "bear-flattening", "Bear steepener": "bear-steepening"
         "Parallel bear shift": "parallel", "Parallel bull shift": "parallel", "Little changed": "flat"}
 
 
+def risk_tape(cross, d10, front_led):
+    """Read the session from the rest of the market: risk-on, risk-off, a rates shock or goldilocks.
+    Returns (label for the headline, sentence on the mechanism) or (None, None) when nothing moved enough to matter."""
+    by = {c["sym"]: c for c in cross}
+    spx, vix, dxy, gold, oil = (by.get(x) for x in ("^GSPC", "^VIX", "DX-Y.NYB", "GC=F", "CL=F"))
+    if not spx:
+        return None, None
+    z = lambda c: (c or {}).get("z") or 0
+    eq = spx["chg"]
+    vix_up = vix and vix["chg"] >= 1.0
+    vix_dn = vix and vix["chg"] <= -1.0
+    risk_off = z(spx) <= -0.6 or (eq < 0 and vix_up)
+    risk_on = z(spx) >= 0.6 or (eq > 0 and vix_dn)
+    eq_txt = f"the S&P 500 {'fell' if eq < 0 else 'rose'} {abs(eq):.1f}%"
+    vix_txt = f" and the VIX {'jumped' if vix['chg'] > 0 else 'eased'} to {vix['now']:.0f}" if vix and abs(vix["chg"]) >= 1 else ""
+    extra = []
+    if gold and z(gold) >= 1 and gold["chg"] > 0:
+        extra.append(f"gold gained {gold['chg']:.1f}%")
+    if dxy and abs(z(dxy)) >= 1:
+        extra.append(f"the dollar {'firmed' if dxy['chg'] > 0 else 'slipped'} {abs(dxy['chg']):.1f}%")
+    if oil and abs(z(oil)) >= 1:
+        extra.append(f"oil {'jumped' if oil['chg'] > 0 else 'slid'} {abs(oil['chg']):.1f}%")
+    tail = (f", while {_join(extra)}" if extra else "")
+    yields_up = d10 > 0
+    if risk_off and not yields_up:
+        return ("a risk-off bid for safety",
+                f"Risk sentiment soured: {eq_txt}{vix_txt}{tail}. Investors rotated out of equities into the safety of "
+                + ("long Treasuries, which is why the long end rallied most." if not front_led else
+                   "Treasuries, and the front end rallied as markets trimmed the odds of further Fed tightening."))
+    if risk_on and yields_up:
+        return ("a risk-on rotation out of havens",
+                f"Risk appetite improved: {eq_txt}{vix_txt}{tail}. With investors moving back into equities, havens like "
+                "Treasuries were sold.")
+    if risk_off and yields_up:
+        return ("a rates shock that spilled into risk assets",
+                f"Higher yields hurt risk assets: {eq_txt}{vix_txt}{tail}. When stocks and bonds fall together, the market "
+                "is worried about inflation and the Fed rather than growth, and bonds stop working as a hedge.")
+    if risk_on and not yields_up:
+        return ("a goldilocks rally across stocks and bonds",
+                f"Stocks and bonds rallied together: {eq_txt}{vix_txt}{tail}. Lower yields are supporting equities, the "
+                "market's read of easier policy without a growth scare.")
+    if extra:
+        return (None, f"Elsewhere, {_join(extra)}, while {eq_txt}.")
+    return (None, None)
+
+
 def summary(a, mode, tr, cross, regime_1y, fed, k, moves, sv, themes, eps, auc, hn):
     T = {t["tenor"]: t for t in a["tenors"]}
     past, asof = date.fromisoformat(a["past"]), date.fromisoformat(a["asof"])
@@ -452,6 +498,30 @@ def summary(a, mode, tr, cross, regime_1y, fed, k, moves, sv, themes, eps, auc, 
                 + f"that sits well inside normal ranges "
                 f"(10-year {d10:+.0f}bp, 2-year {d2:+.0f}bp).")
         s = []
+        r_label, r_why = risk_tape(cross, d10, front_led)
+        tkeys_n = [t["key"] for t in (themes or []) if t.get("volume")][:2]
+        if r_label:
+            first = r_why.split(". ")[0] + "."
+            if "risk-off" in r_label and d10 > -5:
+                verdict = ("Treasuries barely caught a haven bid, a sign that inflation and Fed risk are limiting bonds' "
+                           "role as a hedge.")
+            elif "risk-off" in r_label:
+                verdict = ("Treasuries caught a modest haven bid, but the move stayed inside normal ranges: bonds are "
+                           "hedging equities only partly while inflation and Fed risk linger.")
+            elif "risk-on" in r_label and d10 < 5:
+                verdict = "Treasuries barely sold off, so investors added risk without dumping their bond hedges."
+            elif "risk-on" in r_label:
+                verdict = "Treasuries eased as investors moved back into equities, though the move stayed inside normal ranges."
+            elif "rates shock" in r_label:
+                verdict = "Stocks and bonds fell together, the pattern of an inflation and Fed scare rather than a growth one."
+            else:
+                verdict = "Stocks and bonds rallied together, a read of easier policy without a growth scare."
+            s.append(f"The action was in risk assets rather than rates. {first} {verdict}")
+        elif r_why:
+            s.append(r_why)
+        if tkeys_n and tkeys_n[0] in THEME_NOUN:
+            s.append(f"Headlines tying markets to rates centred on {THEME_NOUN[tkeys_n[0]]}"
+                     + (f" and {THEME_NOUN[tkeys_n[1]]}" if len(tkeys_n) > 1 and tkeys_n[1] in THEME_NOUN else "") + ".")
         if cpi_chg:
             s.append(f"The one data point that mattered was {_period(cpi['now']['period'])} CPI at {cpi['now']['value']:.1f}%"
                      + (f", lifted by energy while core held at {core['now']['value']:.1f}%, which kept rate-hike pricing intact"
@@ -489,15 +559,21 @@ def summary(a, mode, tr, cross, regime_1y, fed, k, moves, sv, themes, eps, auc, 
         else:
             cause, x = "expectations of Fed cuts", None
     else:
-        cause = "a bid for long bonds"
-        x = "a risk-off move in equities" if spx and spx["chg"] < 0 and (spx.get("z") or 0) <= -0.5 else None
+        cause, x = "growth fears", None
     verb = "were mixed" if regime.startswith("Twist") else "sold off" if sold else "rallied"
+    risk_label, risk_why = risk_tape(cross, d10, front_led)
+    tn = THEME_NOUN.get(tkeys[0]) if tkeys else None
     if x:
         head = f"Treasuries {verb} {when} with a {bias} bias on {cause}, driven by {x}."
+    elif risk_label:
+        head = f"Treasuries {verb} {when} with a {bias} bias in {risk_label}" + (f", with headlines centred on {tn}." if tn else ".")
     else:
-        tn = THEME_NOUN.get(tkeys[0]) if tkeys else None
-        head = (f"Treasuries {verb} {when} with a {bias} bias on {cause}, without a single macro catalyst"
-                + (f"; news flow centred on {tn}." if tn else "."))
+        # No data release and a quiet cross-asset tape: say what the market is leaning into.
+        nxt_ev = ""
+        if fed and fed.get("meetings"):
+            nxt_ev = f"the {_day(fed['meetings'][0]['date'])} FOMC"
+        head = (f"Treasuries {verb} {when} with a {bias} bias on a quiet tape, a move that reads as positioning"
+                + (f" ahead of {nxt_ev}" if nxt_ev else "") + (f", with headlines centred on {tn}." if tn else "."))
 
     # Why the driver matters: the chain from the event to this part of the curve.
     why = ""
@@ -537,7 +613,10 @@ def summary(a, mode, tr, cross, regime_1y, fed, k, moves, sv, themes, eps, auc, 
         mix = ("; nearly all of it came through real yields, so this is a repricing of the Fed's path rather than a loss of faith "
                "in long-run inflation control" if rb > 0 else "; nearly all of it came through real yields, a growth and Fed story")
     s3 = nums + mix + "."
-    return {"headline": head, "sentences": [x_ for x_ in (why, s3, fwd) if x_]}
+    tape = risk_why if risk_why and (x is None or risk_label) else ""
+    if x and risk_label and risk_why:
+        tape = "The rest of the market confirmed it. " + risk_why if ("risk-on" in risk_label) == sold else risk_why
+    return {"headline": head, "sentences": [x_ for x_ in (why, tape, s3, fwd) if x_]}
 
 
 def _first(t):
